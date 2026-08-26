@@ -38,10 +38,11 @@ export default function App() {
     setPhase('loading')
     setLoadError(null)
     setProgress(0)
-    setProgressText('بدء التجهيز…')
+    setProgressText('التحقق من الذاكرة المحلية…')
     try {
       const cached = await isModelCached(id)
       setFromCache(cached)
+      setProgressText(cached ? 'تحميل النموذج من الذاكرة المحلية…' : 'بدء التجهيز…')
       await ensureEngine(id, ({ progress: p, text }) => {
         setProgress(p)
         setProgressText(text)
