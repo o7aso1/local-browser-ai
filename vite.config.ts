@@ -90,4 +90,14 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@mlc-ai/web-llm'],
   },
+  server: {
+    host: true,
+    port: 5173,
+    open: '/local-browser-ai/',
+  },
+  preview: {
+    host: true,
+    port: 4173,
+    open: '/local-browser-ai/',
+  },
 })

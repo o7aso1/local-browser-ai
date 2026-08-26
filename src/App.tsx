@@ -10,6 +10,12 @@ import { useAppData } from './hooks/useAppData'
 import { getModelTier } from './lib/models'
 import { createId } from './lib/storage'
 import {
+  getModelBlockReason,
+  getRecommendedModelId,
+  isMobileDevice,
+  isModelSafeForDevice,
+} from './lib/device'
+import {
   ensureEngine,
   isModelCached,
   streamChatCompletion,
@@ -34,7 +40,7 @@ export default function App() {
   const modelId = data.settings?.selectedModelId
   const modelLabel = getModelTier(modelId ?? '')?.label ?? modelId ?? '—'
 
-  const bootEngine = useCallback(async (id: string) => {
+  const bootEngine = useCallback(async (id: string, allowFallback = true) => {
     setPhase('loading')
     setLoadError(null)
     setProgress(0)
@@ -51,14 +57,22 @@ export default function App() {
       setPhase('ready')
     } catch (err) {
       console.error(err)
+      const liteId = getRecommendedModelId()
+      if (allowFallback && id !== liteId && isMobileDevice()) {
+        await data.updateSettings({ selectedModelId: liteId })
+        bootedModelRef.current = null
+        setLoadError(null)
+        await bootEngine(liteId, false)
+        return
+      }
       setLoadError(
         err instanceof Error
           ? err.message
-          : 'تعذّر تجهيز النموذج. تحقق من دعم WebGPU والذاكرة المتاحة.',
+          : 'تعذّر تجهيز النموذج. على الجوال استخدم النموذج «خفيف» فقط.',
       )
       setPhase('error')
     }
-  }, [])
+  }, [data])
 
   useEffect(() => {
     if (!supportsWebGPU()) {
@@ -67,8 +81,14 @@ export default function App() {
     }
     if (!data.ready || !modelId) return
     if (bootedModelRef.current === modelId) return
-    void bootEngine(modelId)
-  }, [data.ready, modelId, bootEngine])
+
+    const safeId = isModelSafeForDevice(modelId) ? modelId : getRecommendedModelId()
+    if (safeId !== modelId) {
+      void data.updateSettings({ selectedModelId: safeId })
+      return
+    }
+    void bootEngine(safeId)
+  }, [data.ready, modelId, bootEngine, data])
 
   const ensureActiveConversation = useCallback(async (): Promise<Conversation> => {
     if (data.activeConversation) return data.activeConversation
@@ -163,6 +183,11 @@ export default function App() {
   const handleSwitchModel = useCallback(
     async (nextId: string) => {
       if (busy) return
+      const block = getModelBlockReason(nextId)
+      if (block) {
+        window.alert(block)
+        return
+      }
       await data.updateSettings({ selectedModelId: nextId })
       data.setView('chat')
       bootedModelRef.current = null

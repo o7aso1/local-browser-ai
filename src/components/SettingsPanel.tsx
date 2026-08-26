@@ -5,6 +5,7 @@ import {
   formatBytes,
   importBackupFromFile,
 } from '../lib/backup'
+import { getOfflineAppUrl, isLocalDev } from '../lib/device'
 import {
   clearAllCaches,
   clearAppData,
@@ -26,7 +27,11 @@ export function SettingsPanel({ onBack, onDataChanged }: Props) {
   const [quota, setQuota] = useState(0)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const offlineUrl = getOfflineAppUrl()
+  const localDev = isLocalDev()
 
   async function refreshStats() {
     const [estimate, cache] = await Promise.all([
@@ -43,6 +48,16 @@ export function SettingsPanel({ onBack, onDataChanged }: Props) {
   useEffect(() => {
     void refreshStats()
   }, [])
+
+  async function copyOfflineUrl() {
+    try {
+      await navigator.clipboard.writeText(offlineUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setMessage('تعذّر النسخ — انسخ الرابط يدوياً.')
+    }
+  }
 
   async function handleExport() {
     setBusy(true)
@@ -110,6 +125,42 @@ export function SettingsPanel({ onBack, onDataChanged }: Props) {
       <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
         كل الأرقام أدناه تخص هذا المتصفح على هذا الجهاز فقط. لا توجد نسخة على خادم.
       </p>
+
+      <div className="surface mt-6 rounded-3xl p-5">
+        <h2 className="font-semibold">رابط العمل بدون إنترنت</h2>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
+          بعد التحميل الأول، افتح <strong>نفس هذا الرابط</strong> بدون نت — أو ثبّت التطبيق على
+          الشاشة الرئيسية. لا تحتاج localhost منفصل؛ الرابط أدناه هو عنوانك المحلي على هذا
+          الجهاز.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <code
+            dir="ltr"
+            className="block flex-1 break-all rounded-xl bg-black/5 px-3 py-2 text-left text-sm"
+          >
+            {offlineUrl}
+          </code>
+          <button
+            type="button"
+            onClick={() => void copyOfflineUrl()}
+            className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm hover:bg-black/5"
+          >
+            {copied ? 'تم النسخ ✓' : 'نسخ'}
+          </button>
+        </div>
+        {localDev ? (
+          <p className="mt-3 text-xs leading-relaxed text-[var(--ink-muted)]">
+            للاختبار من الجوال على نفس الشبكة: شغّل{' '}
+            <code dir="ltr" className="rounded bg-black/5 px-1">
+              npm run dev
+            </code>{' '}
+            على الكمبيوتر وافتح الرابط الذي يظهر بصيغة{' '}
+            <code dir="ltr" className="rounded bg-black/5 px-1">
+              http://192.168.x.x:5173/local-browser-ai/
+            </code>
+          </p>
+        ) : null}
+      </div>
 
       <div className="surface mt-6 space-y-3 rounded-3xl p-5 text-sm">
         <Stat label="حجم المحادثات" value={formatBytes(chatBytes)} />

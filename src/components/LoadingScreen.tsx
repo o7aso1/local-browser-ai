@@ -1,3 +1,5 @@
+import { isMobileDevice } from '../lib/device'
+
 interface Props {
   progress: number
   text: string
@@ -7,6 +9,7 @@ interface Props {
 
 export function LoadingScreen({ progress, text, modelLabel, fromCache }: Props) {
   const pct = Math.round(progress * 100)
+  const onMobile = isMobileDevice()
 
   return (
     <div className="flex min-h-full items-center justify-center p-6">
@@ -18,7 +21,9 @@ export function LoadingScreen({ progress, text, modelLabel, fromCache }: Props) 
         <p className="mt-3 text-[var(--ink-muted)] leading-relaxed">
           {fromCache
             ? 'وجدنا النموذج محفوظاً على جهازك. جاري تحميله إلى الذاكرة…'
-            : 'التحميل الأول يأخذ وقتاً (مرة واحدة فقط). بعدها يعمل التطبيق بسرعة حتى بدون إنترنت.'}
+            : onMobile
+              ? 'التحميل الأول يأخذ وقتاً (مرة واحدة). على الجوال نستخدم النموذج الخفيف لتجنّب تعطل Safari.'
+              : 'التحميل الأول يأخذ وقتاً (مرة واحدة فقط). بعدها يعمل التطبيق بسرعة حتى بدون إنترنت.'}
         </p>
 
         <div className="mt-8">
