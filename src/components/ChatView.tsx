@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage, Persona } from '../types'
+import { MessageContent } from './MessageContent'
 
 interface Props {
   messages: ChatMessage[]
@@ -7,6 +8,8 @@ interface Props {
   busy: boolean
   persona: Persona | null
   modelLabel: string
+  engineReady: boolean
+  loadingHint?: string | null
   onSend: (text: string) => void
   onStop: () => void
 }
@@ -17,6 +20,8 @@ export function ChatView({
   busy,
   persona,
   modelLabel,
+  engineReady,
+  loadingHint,
   onSend,
   onStop,
 }: Props) {
@@ -60,7 +65,14 @@ export function ChatView({
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 md:px-6">
-        {messages.length === 0 && !streamingContent ? (
+        {!engineReady && loadingHint ? (
+          <div className="surface animate-fade-up mx-auto max-w-md rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent-soft)]/40 p-4 text-sm leading-relaxed">
+            <p className="font-medium text-[var(--accent)]">جاري تجهيز النموذج…</p>
+            <p className="mt-1 text-[var(--ink-muted)]">{loadingHint}</p>
+          </div>
+        ) : null}
+
+        {messages.length === 0 && !streamingContent && engineReady ? (
           <div className="animate-fade-up mx-auto mt-10 max-w-md text-center">
             <h2 className="text-xl font-semibold">ابدأ محادثة بهدوء</h2>
             <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
@@ -85,7 +97,7 @@ export function ChatView({
             ref={textareaRef}
             value={input}
             rows={1}
-            disabled={busy}
+            disabled={busy || !engineReady}
             placeholder="اكتب رسالتك…"
             className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 outline-none placeholder:text-[var(--ink-muted)]"
             onChange={(e) => {
@@ -113,7 +125,7 @@ export function ChatView({
             <button
               type="button"
               onClick={submit}
-              disabled={!input.trim()}
+              disabled={!input.trim() || !engineReady}
               className="rounded-2xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
             >
               إرسال
@@ -138,13 +150,17 @@ function Bubble({
   return (
     <div className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
       <div
-        className={`max-w-[min(100%,42rem)] rounded-3xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap shadow-sm ${
+        className={`max-w-[min(100%,42rem)] rounded-3xl px-4 py-3 shadow-sm ${
           isUser
             ? 'rounded-br-lg bg-[var(--user-bubble)] text-white'
             : 'rounded-bl-lg border border-[var(--border)] bg-[var(--assistant-bubble)]'
         } ${streaming ? 'animate-pulse-soft' : 'animate-fade-up'}`}
       >
-        {content}
+        <MessageContent
+          content={content}
+          variant={isUser ? 'user' : 'assistant'}
+          streaming={streaming}
+        />
       </div>
     </div>
   )

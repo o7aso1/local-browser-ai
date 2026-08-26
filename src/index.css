@@ -88,3 +88,30 @@ select {
 .animate-pulse-soft {
   animation: pulse-soft 1.6s ease-in-out infinite;
 }
+
+.markdown-body pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-body :not(pre) > code {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+.code-block {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: embed;
+}
+
+.markdown-body pre {
+  margin: 0.5rem 0;
+}
+
+.markdown-body blockquote {
+  margin: 0.5rem 0;
+  padding-right: 0.75rem;
+  border-right: 3px solid var(--accent);
+  color: var(--ink-muted);
+}

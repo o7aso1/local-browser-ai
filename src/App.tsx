@@ -173,26 +173,18 @@ export default function App() {
 
   const shell = useMemo(() => {
     if (phase === 'unsupported') return <UnsupportedScreen />
-    if (phase === 'checking' || !data.ready) {
-      return (
-        <LoadingScreen
-          progress={0}
-          text="جاري قراءة الإعدادات المحلية…"
-          modelLabel="—"
-          fromCache={false}
-        />
-      )
-    }
-    if (phase === 'loading') {
-      return (
-        <LoadingScreen
-          progress={progress}
-          text={progressText}
-          modelLabel={modelLabel}
-          fromCache={fromCache}
-        />
-      )
-    }
+
+    const loadingHint =
+      phase === 'loading'
+        ? fromCache
+          ? `تحميل من الذاكرة المحلية… ${Math.round(progress * 100)}%`
+          : `${progressText} (${Math.round(progress * 100)}%)`
+        : phase === 'checking' || !data.ready
+          ? 'جاري قراءة الإعدادات…'
+          : null
+
+    const engineReady = phase === 'ready'
+
     if (phase === 'error') {
       return (
         <div className="flex min-h-full items-center justify-center p-6">
@@ -210,6 +202,17 @@ export default function App() {
             </button>
           </div>
         </div>
+      )
+    }
+
+    if (!data.ready) {
+      return (
+        <LoadingScreen
+          progress={progress}
+          text={progressText || 'جاري قراءة الإعدادات المحلية…'}
+          modelLabel={modelLabel}
+          fromCache={fromCache}
+        />
       )
     }
 
@@ -258,6 +261,8 @@ export default function App() {
               busy={busy}
               persona={data.activePersona}
               modelLabel={modelLabel}
+              engineReady={engineReady}
+              loadingHint={loadingHint}
               onSend={(t) => void handleSend(t)}
               onStop={handleStop}
             />

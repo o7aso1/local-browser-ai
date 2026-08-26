@@ -18,7 +18,7 @@ export function LoadingScreen({ progress, text, modelLabel, fromCache }: Props) 
         <p className="mt-3 text-[var(--ink-muted)] leading-relaxed">
           {fromCache
             ? 'وجدنا النموذج محفوظاً على جهازك. جاري تحميله إلى الذاكرة…'
-            : 'يتم جلب أوزان النموذج تلقائياً إلى جهازك وتخزينها محلياً. لا يُرفع أي شيء من محادثاتك.'}
+            : 'التحميل الأول يأخذ وقتاً (مرة واحدة فقط). بعدها يعمل التطبيق بسرعة حتى بدون إنترنت.'}
         </p>
 
         <div className="mt-8">

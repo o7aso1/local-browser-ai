@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { AppSettings, Conversation, Persona } from '../types'
-import { DEFAULT_MODEL_ID } from './models'
+import { DEFAULT_MODEL_ID, migrateModelId } from './models'
 
 interface AppDB extends DBSchema {
   conversations: {
@@ -47,7 +47,15 @@ export function createId(prefix = 'id'): string {
 export async function getSettings(): Promise<AppSettings> {
   const db = await getDb()
   const existing = await db.get('settings', SETTINGS_KEY)
-  if (existing) return existing
+  if (existing) {
+    const migrated = migrateModelId(existing.selectedModelId)
+    if (migrated !== existing.selectedModelId) {
+      const next = { ...existing, selectedModelId: migrated }
+      await db.put('settings', next, SETTINGS_KEY)
+      return next
+    }
+    return existing
+  }
   const defaults: AppSettings = {
     selectedModelId: DEFAULT_MODEL_ID,
     activeConversationId: null,
