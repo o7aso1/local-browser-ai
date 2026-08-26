@@ -1,6 +1,7 @@
 import {
   FAST_MODEL_ID,
   LITE_MODEL_ID,
+  MOBILE_MODEL_ID,
   STRONG_MODEL_ID,
 } from './models'
 
@@ -26,18 +27,17 @@ export function getDeviceMemoryGb(): number | null {
   return typeof mem === 'number' ? mem : null
 }
 
-/** Phones/tablets — only the lite model is safe (Safari crashes on 3B/7B). */
+/** Phones — only 0.5B fits Safari/Chrome mobile memory limits. */
 export function getRecommendedModelId(): string {
-  if (isMobileDevice()) return LITE_MODEL_ID
+  if (isMobileDevice()) return MOBILE_MODEL_ID
   const mem = getDeviceMemoryGb()
   if (mem != null && mem <= 4) return LITE_MODEL_ID
-  if (mem != null && mem <= 8) return FAST_MODEL_ID
   return FAST_MODEL_ID
 }
 
 export function isModelSafeForDevice(modelId: string): boolean {
-  if (modelId === LITE_MODEL_ID) return true
-  if (isMobileDevice()) return false
+  if (isMobileDevice()) return modelId === MOBILE_MODEL_ID
+  if (modelId === MOBILE_MODEL_ID) return isMobileDevice()
   if (modelId === STRONG_MODEL_ID) {
     const mem = getDeviceMemoryGb()
     if (mem != null && mem < 8) return false
@@ -59,19 +59,35 @@ export function isLocalDev(): boolean {
 export function getModelBlockReason(modelId: string): string | null {
   if (isModelSafeForDevice(modelId)) return null
   if (isMobileDevice()) {
-    return 'هذا النموذج ثقيل على الجوال وقد يتسبب بتعطل Safari. استخدم «خفيف جداً» على الهاتف.'
+    return 'على الجوال يعمل نموذج «جوال — الأصغر (0.5B)» فقط. النماذج الأكبر تسبب «Out of memory».'
+  }
+  if (modelId === MOBILE_MODEL_ID) {
+    return 'هذا النموذج مخصص للجوال. على الكمبيوتر اختر «خفيف» أو «متوازن».'
   }
   if (modelId === STRONG_MODEL_ID) {
-    return 'جهازك لا يملك ذاكرة كافية لهذا النموذج. جرّب «متوازن» أو «خفيف».'
+    return 'جهازك لا يملك ذاكرة كافية لهذا النموذج.'
   }
   return 'هذا النموذج غير مناسب لجهازك الحالي.'
 }
 
 export function migrateModelId(id: string): string {
+  if (isMobileDevice()) return MOBILE_MODEL_ID
+  if (id === MOBILE_MODEL_ID) return LITE_MODEL_ID
   if (!isModelSafeForDevice(id)) return getRecommendedModelId()
   return id
 }
 
 export function getDefaultModelId(): string {
   return getRecommendedModelId()
+}
+
+export function formatLoadError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  if (/out of memory|oom|memory/i.test(raw)) {
+    if (isMobileDevice()) {
+      return 'نفدت ذاكرة الجوال (Out of memory). iPhone/Android لا يتحمل نماذج أكبر. جرّب: إغلاق التطبيقات الأخرى، ثم «مسح الكل» من الإعدادات، ثم إعادة فتح الرابط. إذا استمر الخطأ، جهازك لا يدعم تشغيل نموذج محلي.'
+    }
+    return 'نفدت ذاكرة الجهاز. أغلِق التبويبات الأخرى أو اختر نموذجاً أخف.'
+  }
+  return raw || 'تعذّر تجهيز النموذج.'
 }

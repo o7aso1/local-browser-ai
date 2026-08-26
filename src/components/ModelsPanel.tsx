@@ -27,8 +27,8 @@ export function ModelsPanel({ selectedModelId, busy, onSelect, onBack }: Props) 
 
       {onMobile ? (
         <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
-          أنت على جهاز جوال. النماذج الثقيلة (3B/7B) قد تُعطّل Safari. استخدم «خفيف» فقط على
-          الهاتف.
+          أنت على جهاز جوال. يعمل فقط نموذج «جوال — الأصغر (0.5B)». النماذج الأكبر تسبب خطأ Out
+          of memory على iPhone وChrome.
         </div>
       ) : null}
 

@@ -3,6 +3,8 @@ import type {
   InitProgressReport,
 } from '@mlc-ai/web-llm'
 import type { ChatMessage, Persona } from '../types'
+import { isMobileDevice } from './device'
+import { ALL_MODEL_IDS } from './models'
 
 export type ProgressCallback = (report: {
   progress: number
@@ -21,6 +23,12 @@ const GENERATION_OPTS = {
   max_tokens: 1024,
 }
 
+const MOBILE_GENERATION_OPTS = {
+  temperature: 0.6,
+  top_p: 0.9,
+  max_tokens: 512,
+}
+
 const SYSTEM_PROMPT = `أنت مساعد ذكي ومفيد. أجب بلغة المستخدم (عربية أو غيرها) بوضوح ودقة.
 
 قواعد مهمة:
@@ -35,6 +43,7 @@ def example():
 5. لا تكرر نفس الجمل الترحيبية. كن مباشراً ومفيداً.`
 
 let engine: MLCEngineInterface | null = null
+let worker: Worker | null = null
 let loadedModelId: string | null = null
 let loadPromise: Promise<MLCEngineInterface> | null = null
 
@@ -64,12 +73,32 @@ export function localizeProgressText(text: string): string {
   return text
 }
 
+/** Free disk/RAM cache from other models before loading on memory-constrained devices. */
+export async function purgeOtherModels(keepModelId: string): Promise<void> {
+  const { deleteModelInCache } = await webllm()
+  for (const id of ALL_MODEL_IDS) {
+    if (id === keepModelId) continue
+    try {
+      await deleteModelInCache(id)
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export async function isModelCached(modelId: string): Promise<boolean> {
   try {
     const { hasModelInCache } = await webllm()
     return await hasModelInCache(modelId)
   } catch {
     return false
+  }
+}
+
+function terminateWorker() {
+  if (worker) {
+    worker.terminate()
+    worker = null
   }
 }
 
@@ -93,22 +122,42 @@ export async function ensureEngine(
     }
     engine = null
     loadedModelId = null
+    terminateWorker()
   }
 
   loadPromise = (async () => {
-    const { CreateMLCEngine } = await webllm()
-    const next = await CreateMLCEngine(
-      modelId,
-      {
-        initProgressCallback: (report: InitProgressReport) => {
-          onProgress?.({
-            progress: Math.max(0, Math.min(1, report.progress)),
-            text: localizeProgressText(report.text || 'جاري التحميل…'),
-          })
-        },
+    onProgress?.({ progress: 0.02, text: 'جاري تحضير محرك WebGPU…' })
+
+    if (isMobileDevice()) {
+      onProgress?.({ progress: 0.04, text: 'تنظيف ذاكرة النماذج القديمة…' })
+      await purgeOtherModels(modelId)
+    }
+
+    const lib = await webllm()
+    const engineConfig = {
+      initProgressCallback: (report: InitProgressReport) => {
+        onProgress?.({
+          progress: Math.max(0.05, Math.min(1, report.progress)),
+          text: localizeProgressText(report.text || 'جاري التحميل…'),
+        })
       },
+    }
+
+    onProgress?.({ progress: 0.05, text: 'بدء تحميل النموذج…' })
+
+    // Worker keeps the UI thread alive on mobile during heavy GPU init.
+    terminateWorker()
+    worker = new Worker(new URL('../webllm.worker.ts', import.meta.url), {
+      type: 'module',
+    })
+
+    const next = await lib.CreateWebWorkerMLCEngine(
+      worker,
+      modelId,
+      engineConfig,
       CHAT_OPTS,
     )
+
     engine = next
     loadedModelId = modelId
     return next
@@ -131,6 +180,7 @@ export async function unloadEngine(): Promise<void> {
   }
   engine = null
   loadedModelId = null
+  terminateWorker()
 }
 
 export async function deleteCachedModel(modelId: string): Promise<void> {
@@ -218,11 +268,12 @@ export async function streamChatCompletion(options: {
   }
 
   const messages = buildMessages(options.history, options.persona)
+  const genOpts = isMobileDevice() ? MOBILE_GENERATION_OPTS : GENERATION_OPTS
   const chunks = await engine.chat.completions.create({
     messages,
     stream: true,
     stream_options: { include_usage: false },
-    ...GENERATION_OPTS,
+    ...genOpts,
   })
 
   let full = ''

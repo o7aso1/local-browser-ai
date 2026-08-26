@@ -10,14 +10,17 @@ import { useAppData } from './hooks/useAppData'
 import { getModelTier } from './lib/models'
 import { createId } from './lib/storage'
 import {
+  formatLoadError,
   getModelBlockReason,
   getRecommendedModelId,
   isMobileDevice,
   isModelSafeForDevice,
 } from './lib/device'
+import { getModelFallbackChain } from './lib/models'
 import {
   ensureEngine,
   isModelCached,
+  purgeOtherModels,
   streamChatCompletion,
   supportsWebGPU,
 } from './lib/webllm'
@@ -40,12 +43,15 @@ export default function App() {
   const modelId = data.settings?.selectedModelId
   const modelLabel = getModelTier(modelId ?? '')?.label ?? modelId ?? '—'
 
-  const bootEngine = useCallback(async (id: string, allowFallback = true) => {
+  const bootEngine = useCallback(async (id: string, tried: string[] = []) => {
     setPhase('loading')
     setLoadError(null)
-    setProgress(0)
-    setProgressText('التحقق من الذاكرة المحلية…')
+    setProgress(0.02)
+    setProgressText('جاري تحضير المحرك…')
     try {
+      if (isMobileDevice()) {
+        await purgeOtherModels(id)
+      }
       const cached = await isModelCached(id)
       setFromCache(cached)
       setProgressText(cached ? 'تحميل النموذج من الذاكرة المحلية…' : 'بدء التجهيز…')
@@ -54,22 +60,22 @@ export default function App() {
         setProgressText(text)
       })
       bootedModelRef.current = id
+      if (data.settings?.selectedModelId !== id) {
+        await data.updateSettings({ selectedModelId: id })
+      }
       setPhase('ready')
     } catch (err) {
       console.error(err)
-      const liteId = getRecommendedModelId()
-      if (allowFallback && id !== liteId && isMobileDevice()) {
-        await data.updateSettings({ selectedModelId: liteId })
+      const chain = getModelFallbackChain(id, isMobileDevice())
+      const next = chain.find((m) => !tried.includes(m) && m !== id)
+      if (next) {
+        tried.push(id)
         bootedModelRef.current = null
-        setLoadError(null)
-        await bootEngine(liteId, false)
+        setProgressText(`تعذّر تحميل النموذج — جاري تجربة نموذج أخف…`)
+        await bootEngine(next, tried)
         return
       }
-      setLoadError(
-        err instanceof Error
-          ? err.message
-          : 'تعذّر تجهيز النموذج. على الجوال استخدم النموذج «خفيف» فقط.',
-      )
+      setLoadError(formatLoadError(err))
       setPhase('error')
     }
   }, [data])
