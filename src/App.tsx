@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChatView } from './components/ChatView'
-import { MobileStartScreen } from './components/MobileStartScreen'
+import { StartScreen } from './components/StartScreen'
 import { LoadingScreen } from './components/LoadingScreen'
 import { ModelsPanel } from './components/ModelsPanel'
 import { PersonasPanel } from './components/PersonasPanel'
@@ -8,23 +8,15 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { UnsupportedScreen } from './components/UnsupportedScreen'
 import { useAppData } from './hooks/useAppData'
-import { getModelTier } from './lib/models'
+import { formatLoadError } from './lib/device'
 import { createId } from './lib/storage'
 import {
-  formatLoadError,
-  getModelBlockReason,
-  getRecommendedModelId,
-  isMobileDevice,
-  isModelSafeForDevice,
-} from './lib/device'
-import { getModelFallbackChain } from './lib/models'
-import {
-  ensureEngine,
-  isModelCached,
-  purgeOtherModels,
-  streamChatCompletion,
-  supportsWebGPU,
-} from './lib/webllm'
+  bootInference,
+  getBackendLabel,
+  streamInference,
+  unloadAll,
+} from './lib/inference'
+import { canRunLocally } from './lib/inference/capabilities'
 import type { ChatMessage, Conversation } from './types'
 
 type Phase = 'checking' | 'unsupported' | 'awaiting_start' | 'loading' | 'ready' | 'error'
@@ -34,75 +26,54 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('checking')
   const [progress, setProgress] = useState(0)
   const [progressText, setProgressText] = useState('جاري التحقق…')
-  const [fromCache, setFromCache] = useState(false)
+  const [fromCache] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [mobileLoadApproved, setMobileLoadApproved] = useState(false)
+  const [loadApproved, setLoadApproved] = useState(false)
+  const [engineLabel, setEngineLabel] = useState('—')
   const abortRef = useRef<AbortController | null>(null)
-  const bootedModelRef = useRef<string | null>(null)
+  const bootedRef = useRef(false)
 
-  const modelId = data.settings?.selectedModelId
-  const modelLabel = getModelTier(modelId ?? '')?.label ?? modelId ?? '—'
+  const modelId = data.settings?.selectedModelId ?? ''
 
-  const bootEngine = useCallback(async (id: string, tried: string[] = []) => {
+  const boot = useCallback(async () => {
     setPhase('loading')
     setLoadError(null)
-    setProgress(0.02)
-    setProgressText('جاري تحضير المحرك…')
+    setProgress(0.05)
+    setProgressText('جاري التحضير…')
     try {
-      if (isMobileDevice()) {
-        await purgeOtherModels(id)
-      }
-      const cached = await isModelCached(id)
-      setFromCache(cached)
-      setProgressText(cached ? 'تحميل النموذج من الذاكرة المحلية…' : 'بدء التجهيز…')
-      await ensureEngine(id, ({ progress: p, text }) => {
+      const plan = await bootInference(modelId, ({ progress: p, text }) => {
         setProgress(p)
         setProgressText(text)
       })
-      bootedModelRef.current = id
-      if (data.settings?.selectedModelId !== id) {
-        await data.updateSettings({ selectedModelId: id })
-      }
+      setEngineLabel(plan.label)
+      bootedRef.current = true
       setPhase('ready')
     } catch (err) {
       console.error(err)
-      const chain = getModelFallbackChain(id, isMobileDevice())
-      const next = chain.find((m) => !tried.includes(m) && m !== id)
-      if (next) {
-        tried.push(id)
-        bootedModelRef.current = null
-        setProgressText(`تعذّر تحميل النموذج — جاري تجربة نموذج أخف…`)
-        await bootEngine(next, tried)
-        return
-      }
       setLoadError(formatLoadError(err))
       setPhase('error')
+      bootedRef.current = false
     }
-  }, [data])
+  }, [modelId])
 
   useEffect(() => {
-    if (!supportsWebGPU()) {
-      setPhase('unsupported')
-      return
-    }
-    if (!data.ready || !modelId) return
-    if (bootedModelRef.current === modelId) return
-
-    const safeId = isModelSafeForDevice(modelId) ? modelId : getRecommendedModelId()
-    if (safeId !== modelId) {
-      void data.updateSettings({ selectedModelId: safeId })
-      return
-    }
-
-    if (isMobileDevice() && !mobileLoadApproved) {
-      setPhase('awaiting_start')
-      return
-    }
-
-    void bootEngine(safeId)
-  }, [data.ready, modelId, bootEngine, data, mobileLoadApproved])
+    void (async () => {
+      const local = await canRunLocally()
+      if (!local.ok) {
+        setPhase('unsupported')
+        return
+      }
+      if (!data.ready) return
+      if (bootedRef.current) return
+      if (!loadApproved) {
+        setPhase('awaiting_start')
+        return
+      }
+      void boot()
+    })()
+  }, [data.ready, loadApproved, boot])
 
   const ensureActiveConversation = useCallback(async (): Promise<Conversation> => {
     if (data.activeConversation) return data.activeConversation
@@ -144,7 +115,7 @@ export default function App() {
             (p) => p.id === (data.settings?.activePersonaId ?? withUser.personaId),
           ) ?? null
 
-        const full = await streamChatCompletion({
+        const full = await streamInference({
           history: withUser.messages,
           persona,
           signal: controller.signal,
@@ -159,26 +130,27 @@ export default function App() {
           content: full || '…',
           createdAt: Date.now(),
         }
-        const finalConv: Conversation = {
-          ...withUser,
-          messages: [...withUser.messages, assistantMsg],
-          updatedAt: Date.now(),
-        }
-        await data.upsertConversation(finalConv)
-      } catch (err) {
-        console.error(err)
-        const assistantMsg: ChatMessage = {
-          id: createId('msg'),
-          role: 'assistant',
-          content:
-            err instanceof Error
-              ? `تعذّر توليد الرد: ${err.message}`
-              : 'تعذّر توليد الرد.',
-          createdAt: Date.now(),
-        }
         await data.upsertConversation({
           ...withUser,
           messages: [...withUser.messages, assistantMsg],
+          updatedAt: Date.now(),
+        })
+      } catch (err) {
+        console.error(err)
+        await data.upsertConversation({
+          ...withUser,
+          messages: [
+            ...withUser.messages,
+            {
+              id: createId('msg'),
+              role: 'assistant',
+              content:
+                err instanceof Error
+                  ? `تعذّر توليد الرد: ${err.message}`
+                  : 'تعذّر توليد الرد.',
+              createdAt: Date.now(),
+            },
+          ],
           updatedAt: Date.now(),
         })
       } finally {
@@ -197,17 +169,14 @@ export default function App() {
   const handleSwitchModel = useCallback(
     async (nextId: string) => {
       if (busy) return
-      const block = getModelBlockReason(nextId)
-      if (block) {
-        window.alert(block)
-        return
-      }
       await data.updateSettings({ selectedModelId: nextId })
       data.setView('chat')
-      bootedModelRef.current = null
-      await bootEngine(nextId)
+      bootedRef.current = false
+      await unloadAll()
+      setLoadApproved(true)
+      await boot()
     },
-    [busy, data, bootEngine],
+    [busy, data, boot],
   )
 
   const shell = useMemo(() => {
@@ -215,9 +184,9 @@ export default function App() {
 
     if (phase === 'awaiting_start') {
       return (
-        <MobileStartScreen
+        <StartScreen
           onStart={() => {
-            setMobileLoadApproved(true)
+            setLoadApproved(true)
             setPhase('loading')
           }}
         />
@@ -226,14 +195,13 @@ export default function App() {
 
     const loadingHint =
       phase === 'loading'
-        ? fromCache
-          ? `تحميل من الذاكرة المحلية… ${Math.round(progress * 100)}%`
-          : `${progressText} (${Math.round(progress * 100)}%)`
+        ? `${progressText} (${Math.round(progress * 100)}%)`
         : phase === 'checking' || !data.ready
           ? 'جاري قراءة الإعدادات…'
           : null
 
     const engineReady = phase === 'ready'
+    const modelLabel = engineReady ? getBackendLabel() || engineLabel : engineLabel
 
     if (phase === 'error') {
       return (
@@ -247,8 +215,9 @@ export default function App() {
               type="button"
               className="mt-5 rounded-2xl bg-[var(--accent)] px-4 py-2.5 text-sm text-white"
               onClick={() => {
-                if (isMobileDevice()) setMobileLoadApproved(true)
-                if (modelId) void bootEngine(getRecommendedModelId())
+                bootedRef.current = false
+                setLoadApproved(true)
+                void boot()
               }}
             >
               إعادة المحاولة
@@ -258,11 +227,11 @@ export default function App() {
       )
     }
 
-    if (!data.ready) {
+    if (!data.ready || phase === 'loading') {
       return (
         <LoadingScreen
           progress={progress}
-          text={progressText || 'جاري قراءة الإعدادات المحلية…'}
+          text={progressText || 'جاري التحميل…'}
           modelLabel={modelLabel}
           fromCache={fromCache}
         />
@@ -323,7 +292,7 @@ export default function App() {
 
           {data.view === 'models' ? (
             <ModelsPanel
-              selectedModelId={modelId!}
+              selectedModelId={modelId}
               busy={busy}
               onSelect={(id) => void handleSwitchModel(id)}
               onBack={() => data.setView('chat')}
@@ -347,7 +316,8 @@ export default function App() {
             <SettingsPanel
               onBack={() => data.setView('chat')}
               onDataChanged={async () => {
-                bootedModelRef.current = null
+                bootedRef.current = false
+                await unloadAll()
                 await data.refresh()
               }}
             />
@@ -360,11 +330,11 @@ export default function App() {
     data,
     progress,
     progressText,
-    modelLabel,
+    engineLabel,
     fromCache,
     loadError,
     modelId,
-    bootEngine,
+    boot,
     streamingContent,
     busy,
     handleSend,

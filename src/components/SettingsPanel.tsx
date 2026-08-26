@@ -12,7 +12,7 @@ import {
   estimateCacheBytes,
   getStorageEstimate,
 } from '../lib/storage'
-import { unloadEngine } from '../lib/webllm'
+import { unloadAll } from '../lib/inference'
 
 interface Props {
   onBack: () => void
@@ -99,7 +99,7 @@ export function SettingsPanel({ onBack, onDataChanged }: Props) {
     setBusy(true)
     setMessage(null)
     try {
-      await unloadEngine()
+      await unloadAll()
       await clearAppData()
       await clearAllCaches()
       await onDataChanged()

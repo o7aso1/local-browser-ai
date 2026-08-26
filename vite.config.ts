@@ -46,7 +46,7 @@ export default defineConfig({
       },
       workbox: {
         // WebLLM ships a multi‑MB JS bundle; must be precached for true offline reload.
-        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 25 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,svg,png,woff2,webmanifest}'],
         navigateFallback: `/${repoName}/index.html`,
         runtimeCaching: [
@@ -88,7 +88,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 8000,
   },
   optimizeDeps: {
-    exclude: ['@mlc-ai/web-llm'],
+    exclude: ['@mlc-ai/web-llm', '@huggingface/transformers'],
   },
   server: {
     host: true,

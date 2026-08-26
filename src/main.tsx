@@ -4,7 +4,7 @@ import { registerSW } from 'virtual:pwa-register'
 import App from './App'
 import './index.css'
 
-const APP_VERSION = '4'
+const APP_VERSION = '5'
 
 async function ensureFreshShell() {
   const key = 'local-browser-ai-version'
