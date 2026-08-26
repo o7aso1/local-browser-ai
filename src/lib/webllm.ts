@@ -43,7 +43,6 @@ def example():
 5. لا تكرر نفس الجمل الترحيبية. كن مباشراً ومفيداً.`
 
 let engine: MLCEngineInterface | null = null
-let worker: Worker | null = null
 let loadedModelId: string | null = null
 let loadPromise: Promise<MLCEngineInterface> | null = null
 
@@ -95,12 +94,6 @@ export async function isModelCached(modelId: string): Promise<boolean> {
   }
 }
 
-function terminateWorker() {
-  if (worker) {
-    worker.terminate()
-    worker = null
-  }
-}
 
 export async function ensureEngine(
   modelId: string,
@@ -122,7 +115,6 @@ export async function ensureEngine(
     }
     engine = null
     loadedModelId = null
-    terminateWorker()
   }
 
   loadPromise = (async () => {
@@ -133,7 +125,7 @@ export async function ensureEngine(
       await purgeOtherModels(modelId)
     }
 
-    const lib = await webllm()
+    const { CreateMLCEngine } = await webllm()
     const engineConfig = {
       initProgressCallback: (report: InitProgressReport) => {
         onProgress?.({
@@ -145,18 +137,7 @@ export async function ensureEngine(
 
     onProgress?.({ progress: 0.05, text: 'بدء تحميل النموذج…' })
 
-    // Worker keeps the UI thread alive on mobile during heavy GPU init.
-    terminateWorker()
-    worker = new Worker(new URL('../webllm.worker.ts', import.meta.url), {
-      type: 'module',
-    })
-
-    const next = await lib.CreateWebWorkerMLCEngine(
-      worker,
-      modelId,
-      engineConfig,
-      CHAT_OPTS,
-    )
+    const next = await CreateMLCEngine(modelId, engineConfig, CHAT_OPTS)
 
     engine = next
     loadedModelId = modelId
@@ -180,7 +161,6 @@ export async function unloadEngine(): Promise<void> {
   }
   engine = null
   loadedModelId = null
-  terminateWorker()
 }
 
 export async function deleteCachedModel(modelId: string): Promise<void> {

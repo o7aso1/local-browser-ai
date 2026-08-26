@@ -83,6 +83,9 @@ export function getDefaultModelId(): string {
 
 export function formatLoadError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err)
+  if (/importing a module script failed|module script failed|import.*failed/i.test(raw)) {
+    return 'فشل تحميل ملفات المحرك (غالباً نسخة قديمة في الذاكرة). احذف بيانات الموقع من Safari: الإعدادات ← Safari ← متقدم ← بيانات المواقع ← o7aso1.github.io ← حذف. ثم أعد فتح الرابط.'
+  }
   if (/out of memory|oom|memory/i.test(raw)) {
     if (isMobileDevice()) {
       return 'نفدت ذاكرة الجوال (Out of memory). iPhone/Android لا يتحمل نماذج أكبر. جرّب: إغلاق التطبيقات الأخرى، ثم «مسح الكل» من الإعدادات، ثم إعادة فتح الرابط. إذا استمر الخطأ، جهازك لا يدعم تشغيل نموذج محلي.'

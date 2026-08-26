@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChatView } from './components/ChatView'
+import { MobileStartScreen } from './components/MobileStartScreen'
 import { LoadingScreen } from './components/LoadingScreen'
 import { ModelsPanel } from './components/ModelsPanel'
 import { PersonasPanel } from './components/PersonasPanel'
@@ -26,7 +27,7 @@ import {
 } from './lib/webllm'
 import type { ChatMessage, Conversation } from './types'
 
-type Phase = 'checking' | 'unsupported' | 'loading' | 'ready' | 'error'
+type Phase = 'checking' | 'unsupported' | 'awaiting_start' | 'loading' | 'ready' | 'error'
 
 export default function App() {
   const data = useAppData()
@@ -37,6 +38,7 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [mobileLoadApproved, setMobileLoadApproved] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const bootedModelRef = useRef<string | null>(null)
 
@@ -93,8 +95,14 @@ export default function App() {
       void data.updateSettings({ selectedModelId: safeId })
       return
     }
+
+    if (isMobileDevice() && !mobileLoadApproved) {
+      setPhase('awaiting_start')
+      return
+    }
+
     void bootEngine(safeId)
-  }, [data.ready, modelId, bootEngine, data])
+  }, [data.ready, modelId, bootEngine, data, mobileLoadApproved])
 
   const ensureActiveConversation = useCallback(async (): Promise<Conversation> => {
     if (data.activeConversation) return data.activeConversation
@@ -205,6 +213,17 @@ export default function App() {
   const shell = useMemo(() => {
     if (phase === 'unsupported') return <UnsupportedScreen />
 
+    if (phase === 'awaiting_start') {
+      return (
+        <MobileStartScreen
+          onStart={() => {
+            setMobileLoadApproved(true)
+            setPhase('loading')
+          }}
+        />
+      )
+    }
+
     const loadingHint =
       phase === 'loading'
         ? fromCache
@@ -227,7 +246,10 @@ export default function App() {
             <button
               type="button"
               className="mt-5 rounded-2xl bg-[var(--accent)] px-4 py-2.5 text-sm text-white"
-              onClick={() => modelId && void bootEngine(modelId)}
+              onClick={() => {
+                if (isMobileDevice()) setMobileLoadApproved(true)
+                if (modelId) void bootEngine(getRecommendedModelId())
+              }}
             >
               إعادة المحاولة
             </button>
