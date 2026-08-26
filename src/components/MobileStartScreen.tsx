@@ -1,4 +1,3 @@
-import { isMobileDevice } from '../lib/device'
 import { MOBILE_MODEL_ID, getModelTier } from '../lib/models'
 
 interface Props {
